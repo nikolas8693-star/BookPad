@@ -209,11 +209,11 @@ $('file').addEventListener('change', function () {
   fr.onload = function () {
     var img = new Image();
     img.onload = function () {
-      var c = document.createElement('canvas'); c.width = 160; c.height = 230;
-      var r = 160 / 230, sw, sh;
+      var c = document.createElement('canvas'); c.width = 240; c.height = 345;
+      var r = 240 / 345, sw, sh;
       if (img.width / img.height > r) { sh = img.height; sw = sh * r; } else { sw = img.width; sh = sw / r; }
-      c.getContext('2d').drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, 160, 230);
-      b.cover = c.toDataURL('image/jpeg', 0.7); save(); renderLib();
+      c.getContext('2d').drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, 240, 345);
+      b.cover = c.toDataURL('image/jpeg', 0.75); save(); renderLib();
     };
     img.onerror = function () { alert('Immagine non leggibile.'); };
     img.src = fr.result;
@@ -422,17 +422,20 @@ function draw() {
   rendering = true; $('pg').value = page;
   pdfDoc.getPage(page).then(function (p) {
     var W = window.innerWidth, H = window.innerHeight, v1 = vpOf(p, 1);
-    var sc = Math.min(W / v1.width, H / v1.height) * zoom, vp = vpOf(p, sc);
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var css = Math.min(W / v1.width, H / v1.height) * zoom;
+    var cssW = Math.floor(v1.width * css), cssH = Math.floor(v1.height * css);
+    var sc = css * dpr, vp = vpOf(p, sc);
     if (vp.width * vp.height > 4000000) { sc = sc * Math.sqrt(4000000 / (vp.width * vp.height)); vp = vpOf(p, sc); }
     var cv = $('cv'), w = Math.floor(vp.width), h = Math.floor(vp.height);
     cv.width = w; cv.height = h;
-    cv.style.width = w + 'px'; cv.style.height = h + 'px';
-    cv.style.marginTop = Math.max(0, Math.floor((H - h) / 2)) + 'px';
+    cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
+    cv.style.marginTop = Math.max(0, Math.floor((H - cssH) / 2)) + 'px';
     var ctx = cv.getContext('2d');
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
     return p.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
       beige(cv, ctx); p.cleanup();
-      var sc2 = $('scroll'); sc2.scrollTop = 0; sc2.scrollLeft = Math.max(0, (w - W) / 2);
+      var sc2 = $('scroll'); sc2.scrollTop = 0; sc2.scrollLeft = Math.max(0, (cssW - W) / 2);
     });
   }).then(function () {
     rendering = false; showMsg('');
