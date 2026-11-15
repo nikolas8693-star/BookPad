@@ -389,7 +389,7 @@ function startDoc(buf) {
     var step = '2/3 Scarico il PDF';
     showMsg(step + '…');
     tm = setTimeout(function () { fail('Dopo 40 secondi non è ancora pronto. Fermo al passaggio: ' + step + '. Lettore caricato ' + where + '.'); }, 40000);
-    var task = getLib().getDocument(buf ? { data: new Uint8Array(buf) } : { url: cur.url, disableAutoFetch: true, disableStream: true });
+    var task = getLib().getDocument(buf ? { data: new Uint8Array(buf) } : { url: cur.url + (cur.url.indexOf('?') < 0 ? '?' : '&') + 'bp=' + Date.now(), disableRange: true, disableAutoFetch: true, disableStream: true });
     task.onProgress = function (p) { if (p && p.loaded) { step = '2/3 Scarico il PDF (' + Math.round(p.loaded / 1024) + ' KB' + (p.total ? ' di ' + Math.round(p.total / 1024) + ' KB' : '') + ')'; showMsg(step + '…'); } };
     task.promise.then(function (d) {
       clearTimeout(tm); showMsg('3/3 Preparo la pagina…');
