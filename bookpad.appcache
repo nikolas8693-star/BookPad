@@ -1,0 +1,11 @@
+CACHE MANIFEST
+# versione 1 - cambia questo numero ogni volta che modifichi index.html
+
+CACHE:
+index.html
+pdfjs/pdf.min.js
+pdfjs/pdf.worker.min.js
+apple-touch-icon.png
+
+NETWORK:
+*

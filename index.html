@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="it"><head><meta charset="utf-8">
+<html lang="it" manifest="bookpad.appcache"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="BookPad">
@@ -18,6 +18,7 @@ input[type=text],input[type=url],input[type=number]{font-family:inherit;font-siz
 .cov{position:relative;width:70%;margin:0 auto;padding-top:100%;background:#D9CCA6 center center no-repeat;background-size:cover;border:1px solid #B9A97F}
 .cov span{position:absolute;left:10px;right:10px;top:32%;font-size:20px;line-height:1.2;overflow:hidden;max-height:40%}
 .ttl{margin:8px 0 6px;line-height:1.2;max-height:44px;overflow:hidden}
+.off{font-size:14px;color:#6b6350;margin:-2px 0 6px}
 .acts{font-size:0;line-height:0;white-space:nowrap}
 .acts button{width:44px;height:44px;margin:0 6px;padding:0;vertical-align:top;font-size:0}
 .acts svg{display:block;width:26px;height:26px;margin:0 auto;pointer-events:none}
@@ -130,7 +131,7 @@ function purge() {
   var keep = [], now = Date.now();
   for (var i = 0; i < S.books.length; i++) {
     var b = S.books[i];
-    if (!b.del || now - b.del < 3 * 86400000) keep.push(b); else if (b.local) idbDel(b.id);
+    if (!b.del || now - b.del < 3 * 86400000) keep.push(b); else if (b.local || b.cached) idbDel(b.id);
   }
   S.books = keep; save();
 }
@@ -181,7 +182,7 @@ function renderLib() {
     h += '<div class="book"><div class="cov" data-open="' + b.id + '"' +
       (b.cover ? ' style="background-image:url(' + b.cover + ')"' : '') + '>' +
       (b.cover ? '' : '<span>' + esc(b.title) + '</span>') + '</div>' +
-      '<div class="ttl">' + esc(b.title) + '</div><div class="acts">' +
+      '<div class="ttl">' + esc(b.title) + '</div>' + ((b.local || b.cached) ? '<div class="off">Salvato sul dispositivo</div>' : '') + '<div class="acts">' +
       '<button data-act="ren" data-id="' + b.id + '" aria-label="Rinomina">' + ICO_REN + '</button>' +
       '<button data-act="cov" data-id="' + b.id + '" aria-label="Cambia copertina">' + ICO_COV + '</button>' +
       '<button data-act="del" data-id="' + b.id + '" aria-label="Elimina">' + ICO_DEL + '</button></div></div>';
@@ -277,7 +278,9 @@ $('siteBtn').addEventListener('click', function () {
   x.onreadystatechange = function () {
     if (x.readyState !== 4) return;
     if (x.status !== 200) {
-      $('siteList').innerHTML = '<p>Non trovo il file <b>libri/elenco.txt</b> sul sito (errore ' + x.status + ').</p><p>Crealo con un nome di file PDF per riga e ricarica la cartella su Netlify.</p>';
+      $('siteList').innerHTML = x.status === 0
+        ? '<p>Non riesco a raggiungere il sito. Sei offline? Questa lista serve la connessione: i libri già salvati sul dispositivo si aprono lo stesso dalla libreria.</p>'
+        : '<p>Non trovo il file <b>libri/elenco.txt</b> sul sito (errore ' + x.status + ').</p><p>Crealo con un nome di file PDF per riga e caricalo nella cartella libri su GitHub.</p>';
       return;
     }
     var lines = x.responseText.replace(/^﻿/, '').split(/\r?\n/), out = [], i, s;
@@ -318,7 +321,7 @@ $('trashList').addEventListener('click', function (e) {
   else if (a === 'gone') {
     if (!confirm('Eliminare per sempre "' + b.title + '"?')) return;
     var k = [], i; for (i = 0; i < S.books.length; i++) { if (S.books[i] !== b) k.push(S.books[i]); }
-    S.books = k; if (b.local) idbDel(b.id);
+    S.books = k; if (b.local || b.cached) idbDel(b.id);
   }
   save(); renderTrash(); renderLib();
 });
@@ -372,32 +375,59 @@ function openBook(id) {
   $('libwrap').style.display = 'none'; $('reader').style.display = 'block';
   hideBars(); $('err').style.display = 'none'; startDoc();
 }
+/* Prende i byte del libro: prima dalla memoria del dispositivo, altrimenti li scarica e li salva per l'uso offline */
+function loadBytes(cb) {
+  var id = cur.id;
+  idbGet(id, function (b) {
+    if (b) { cb(null, b); return; }
+    if (cur.local) { cb('Il file non è più nella memoria di questo dispositivo. Eliminalo e caricalo di nuovo.'); return; }
+    var x = new XMLHttpRequest();
+    x.open('GET', cur.url + (cur.url.indexOf('?') < 0 ? '?' : '&') + 'bp=' + Date.now(), true);
+    x.responseType = 'arraybuffer';
+    x.onprogress = function (e) { showMsg('Scarico il PDF (' + Math.round(e.loaded / 1024) + ' KB' + (e.lengthComputable ? ' di ' + Math.round(e.total / 1024) + ' KB' : '') + ')…'); };
+    x.onload = function () {
+      if (x.status === 200 && x.response && x.response.byteLength) {
+        var ab = x.response;
+        idbPut(id, ab, function (ok) {
+          var bk = find(id); if (bk) { bk.cached = !!ok; save(); }
+          cb(null, ab);
+        });
+      } else { cb('Il sito ha risposto con errore ' + x.status + '.'); }
+    };
+    x.onerror = function () { cb('Download non riuscito. Se sei offline, questo libro non è ancora salvato sul dispositivo: aprilo una volta con internet e poi funzionerà anche senza.'); };
+    x.send();
+  });
+}
 function startDoc(buf) {
-  if (cur.local && !buf) {
-    showMsg('Leggo il file dalla memoria…');
-    idbGet(cur.id, function (b) {
-      if (!b) { fail('Il file non è più nella memoria di questo dispositivo. Eliminalo e caricalo di nuovo.'); return; }
+  if (!buf) {
+    $('err').style.display = 'none'; showMsg('Carico il libro…');
+    loadBytes(function (err, b) {
+      if (!cur) return;
+      if (err) { fail(err); return; }
       startDoc(b);
     });
     return;
   }
   var tm = null;
-  $('err').style.display = 'none'; showMsg('1/3 Carico il lettore PDF…');
+  showMsg('Carico il lettore PDF…');
   initPdf(function (ok) {
+    if (!cur) return;
     if (!ok) { fail('Il lettore PDF non si è caricato. ' + diag); return; }
     var where = (pdfBase === CDN) ? 'da internet (cartella pdfjs non trovata)' : 'dalla cartella pdfjs';
-    var step = '2/3 Scarico il PDF';
-    showMsg(step + '…');
-    tm = setTimeout(function () { fail('Dopo 40 secondi non è ancora pronto. Fermo al passaggio: ' + step + '. Lettore caricato ' + where + '.'); }, 40000);
-    var task = getLib().getDocument(buf ? { data: new Uint8Array(buf) } : { url: cur.url + (cur.url.indexOf('?') < 0 ? '?' : '&') + 'bp=' + Date.now(), disableRange: true, disableAutoFetch: true, disableStream: true });
-    task.onProgress = function (p) { if (p && p.loaded) { step = '2/3 Scarico il PDF (' + Math.round(p.loaded / 1024) + ' KB' + (p.total ? ' di ' + Math.round(p.total / 1024) + ' KB' : '') + ')'; showMsg(step + '…'); } };
+    showMsg('Apro il PDF…');
+    tm = setTimeout(function () { fail('Dopo 40 secondi il PDF non è ancora pronto. Lettore caricato ' + where + '.'); }, 40000);
+    var task = getLib().getDocument({ data: new Uint8Array(buf) });
     task.promise.then(function (d) {
-      clearTimeout(tm); showMsg('3/3 Preparo la pagina…');
+      clearTimeout(tm); showMsg('Preparo la pagina…');
       pdfDoc = d;
       page = Math.min(Math.max(cur.page || 1, 1), d.numPages);
       $('tot').innerHTML = '/ ' + d.numPages; $('pg').max = d.numPages;
       draw();
-    }).catch(function (e) { clearTimeout(tm); fail((e && e.message) ? e.message : String(e)); });
+    }).catch(function (e) {
+      clearTimeout(tm);
+      if (cur && !cur.local && cur.cached) { idbDel(cur.id); cur.cached = false; save(); }
+      fail((e && e.message) ? e.message : String(e));
+    });
   });
 }
 function fail(txt) {
@@ -487,5 +517,7 @@ $('nightbtn').addEventListener('click', function () { S.night = !S.night; save()
 applyNight();
 renderLib();
 initPdf(function () {});
+/* uso offline dell'app: iPhone/iPad recenti usano il service worker (iOS 9 usa il file bookpad.appcache) */
+try { if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); } } catch (e) {}
 </script>
 </body></html>
