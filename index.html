@@ -19,6 +19,7 @@ input[type=text],input[type=url],input[type=number]{font-family:inherit;font-siz
 .cov span{position:absolute;left:10px;right:10px;top:32%;font-size:20px;line-height:1.2;overflow:hidden;max-height:40%}
 .ttl{margin:8px 0 6px;line-height:1.2;max-height:44px;overflow:hidden}
 .off{font-size:14px;color:#6b6350;margin:-2px 0 6px}
+#offst{position:fixed;left:16px;bottom:26px;font-size:14px;color:#6b6350;z-index:5}
 .acts{font-size:0;line-height:0;white-space:nowrap}
 .acts button{width:44px;height:44px;margin:0 6px;padding:0;vertical-align:top;font-size:0}
 .acts svg{display:block;width:26px;height:26px;margin:0 auto;pointer-events:none}
@@ -59,6 +60,7 @@ input[type=text],input[type=url],input[type=number]{font-family:inherit;font-siz
   <div id="top"><h1>BookPad</h1><div><button id="siteBtn">Libri del sito</button> <button id="addbtn" aria-label="Aggiungi PDF">+</button></div></div>
   <div id="lib"><div id="shelf"></div></div>
   <button id="trashbtn">Cestino</button>
+  <div id="offst"></div>
 </div>
 
 <div id="reader">
@@ -517,6 +519,29 @@ $('nightbtn').addEventListener('click', function () { S.night = !S.night; save()
 applyNight();
 renderLib();
 initPdf(function () {});
+/* stato dell'uso offline, scritto in basso a sinistra nella libreria */
+(function () {
+  var el = $('offst'), ac = window.applicationCache, n = 0;
+  function set(t) { el.innerHTML = 'App offline: ' + t; }
+  if (ac) {
+    set(ac.status === 0 ? 'non attiva' : 'controllo…');
+    var ev = {
+      checking: function () { set('controllo…'); },
+      noupdate: function () { set('pronta ✓'); },
+      cached: function () { set('pronta ✓'); },
+      downloading: function () { set('scarico i file…'); },
+      progress: function () { n++; set('scarico i file (' + n + ')…'); },
+      updateready: function () { set('aggiornamento pronto: chiudi e riapri l’app'); },
+      obsolete: function () { set('file bookpad.appcache non trovato'); },
+      error: function () { set('ERRORE: il file bookpad.appcache non è stato accettato'); }
+    };
+    for (var k in ev) { if (ev.hasOwnProperty(k)) ac.addEventListener(k, ev[k], false); }
+  }
+  try {
+    if ('serviceWorker' in navigator) navigator.serviceWorker.ready.then(function () { set('pronta ✓'); });
+    else if (!ac) set('non supportata su questo dispositivo');
+  } catch (e) {}
+})();
 /* uso offline dell'app: iPhone/iPad recenti usano il service worker (iOS 9 usa il file bookpad.appcache) */
 try { if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); } } catch (e) {}
 </script>
